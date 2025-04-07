@@ -3,7 +3,7 @@ import os
 import re
 from datetime import datetime
 
-# Для YouTube Data API
+# For YouTube Data API
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -21,19 +21,19 @@ from webdriver_manager.chrome import ChromeDriverManager
 # openpyxl
 from openpyxl import Workbook, load_workbook
 
-# ====== Настройки ======
-XLSX_INPUT = "channel_info.xlsx"    # Входной файл
-XLSX_OUTPUT = "final_channels.xlsx" # Выходной файл результатов
+# ====== Settings ======
+XLSX_INPUT = "channel_info.xlsx"       # Input file
+XLSX_OUTPUT = "final_channels.xlsx"    # Output file for results
 
-# Ваш API-ключ для YouTube Data API
-DEVELOPER_KEY = "AIzaSyDWpLkA5QbQjqz-pfaV03FslYXPGLOn9zg"
+# Your API key for the YouTube Data API
+DEVELOPER_KEY = "YOUR_API_KEY_HERE"
 
-MAX_CHANNELS = None  # Лимит на кол-во обрабатываемых каналов
+MAX_CHANNELS = None  # Limit for the number of channels to process, or None for no limit
 
 def iso_to_readable(iso_dt_str: str) -> str:
     """
-    Принимает строку в формате ISO-8601, например "2025-03-17T16:00:01Z",
-    и возвращает "YYYY-MM-DD HH:MM:SS" (UTC).
+    Takes a string in ISO-8601 format, for example "2025-03-17T16:00:01Z",
+    and returns "YYYY-MM-DD HH:MM:SS" (UTC).
     """
     if not iso_dt_str:
         return ""
@@ -47,13 +47,13 @@ def iso_to_readable(iso_dt_str: str) -> str:
 
 def get_webdriver():
     """
-    Настраиваем ChromeDriver.
+    Configure ChromeDriver.
     """
     chrome_options = Options()
     chrome_options.add_argument("--lang=en-US")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--disable-software-rasterizer")
-    # chrome_options.add_argument("--headless")  # При необходимости
+    # chrome_options.add_argument("--headless")  # If needed
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-notifications")
 
@@ -65,8 +65,8 @@ def get_webdriver():
 
 def normalize_channel_url(raw_url: str) -> str:
     """
-    Преобразует handle/частичную ссылку в формальную ссылку на канал
-    + добавляет ?hl=en&gl=US.
+    Transforms a handle/partial link into a formal channel URL
+    + adds ?hl=en&gl=US.
     """
     raw_url = raw_url.strip()
     if raw_url.startswith("http://") or raw_url.startswith("https://"):
@@ -88,15 +88,15 @@ def normalize_channel_url(raw_url: str) -> str:
 
 def get_channel_id_from_handle_selenium(handle: str) -> str:
     """
-    Открывает https://www.youtube.com/<handle> и пытается извлечь channelId.
-    Ищет <link rel="canonical" href=".../channel/UCxxx" /> или "channelId":"UCxxx".
-    Возвращает 'UCxxx...' или "", если не найдено.
+    Opens https://www.youtube.com/<handle> and tries to extract channelId.
+    Looks for <link rel="canonical" href=".../channel/UCxxx" /> or "channelId":"UCxxx".
+    Returns 'UCxxx...' or "" if not found.
     """
     driver_local = get_webdriver()
     try:
         handle_str = handle.lstrip("/")
         url = f"https://www.youtube.com/{handle_str}"
-        print(f"[LOG] -> Открываем для поиска channelId: {url}")
+        print(f"[LOG] -> Opening for channelId lookup: {url}")
         driver_local.get(url)
         time.sleep(5)
 
@@ -107,7 +107,7 @@ def get_channel_id_from_handle_selenium(handle: str) -> str:
         m1 = re.search(canon_regex, page_source)
         if m1:
             cid = m1.group(1)
-            print(f"[LOG] -> Найден channelId через canonical: {cid}")
+            print(f"[LOG] -> Found channelId via canonical: {cid}")
             return cid
 
         # 2) "channelId":"UCxxxx"
@@ -115,14 +115,14 @@ def get_channel_id_from_handle_selenium(handle: str) -> str:
         m2 = re.search(chid_regex, page_source)
         if m2:
             cid = m2.group(1)
-            print(f"[LOG] -> Найден channelId внутри скрипта: {cid}")
+            print(f"[LOG] -> Found channelId in script: {cid}")
             return cid
 
-        print("[LOG] -> Не удалось найти channelId.")
+        print("[LOG] -> Could not find channelId.")
         return ""
 
     except Exception as e:
-        print(f"[LOG] -> Ошибка при извлечении channelId: {e}")
+        print(f"[LOG] -> Error extracting channelId: {e}")
         return ""
     finally:
         driver_local.quit()
@@ -130,7 +130,7 @@ def get_channel_id_from_handle_selenium(handle: str) -> str:
 
 def parse_subscribers_to_int(subs_text):
     """
-    Преобразует строку вида "12.3K subscribers" -> 12300 и т.д.
+    Converts a string like "12.3K subscribers" -> 12300, etc.
     """
     if not subs_text:
         return None
@@ -152,7 +152,7 @@ def parse_subscribers_to_int(subs_text):
 
 def extract_emails_from_text(text):
     """
-    Ищем email в тексте (регэксп).
+    Looks for emails in text (regex).
     """
     pattern = r'[a-zA-Z0-9_.+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z0-9-.]+'
     return re.findall(pattern, text)
@@ -160,7 +160,7 @@ def extract_emails_from_text(text):
 
 def guess_name_surname(channel_name):
     """
-    Наивно считаем, что если название канала в 2 слова - это Имя Фамилия.
+    Naively assumes if the channel name has 2 words, it's Firstname Lastname.
     """
     parts = channel_name.split()
     if len(parts) == 2:
@@ -170,7 +170,7 @@ def guess_name_surname(channel_name):
 
 def get_city_country_from_about(driver):
     """
-    Пытаемся найти "Location: ..." или "Lives in ..." на вкладке About.
+    Tries to find "Location: ..." or "Lives in ..." on the About tab.
     """
     try:
         about_sections = driver.find_elements(By.CSS_SELECTOR, "ytd-channel-about-metadata-renderer div#description-container")
@@ -187,7 +187,7 @@ def get_city_country_from_about(driver):
 
 def sum_likes_comments_via_api(video_ids, developer_key=DEVELOPER_KEY):
     """
-    Суммируем likeCount и commentCount для списка роликов (videoIds) через API.
+    Sums likeCount and commentCount for a list of videos (videoIds) via API.
     """
     if not video_ids:
         return (0, 0)
@@ -206,12 +206,12 @@ def sum_likes_comments_via_api(video_ids, developer_key=DEVELOPER_KEY):
                 id=id_str
             ).execute()
         except HttpError as e:
-            # Проверяем, не исчерпана ли квота
+            # Check if the quota has been exceeded
             if e.resp.status in [403, 429] or 'quotaExceeded' in str(e.content):
-                print("[LOG] -> Достигнут лимит квоты YouTube Data API (quotaExceeded). Прерываем обработку.")
-                raise  # Пробрасываем исключение вверх для остановки скрипта
+                print("[LOG] -> YouTube Data API quotaExceeded. Stopping processing.")
+                raise  # Re-raise exception to stop the script
             else:
-                print(f"[LOG] -> HttpError при получении статистики видео: {e}")
+                print(f"[LOG] -> HttpError while getting video statistics: {e}")
                 continue
 
         items = response.get("items", [])
@@ -234,8 +234,8 @@ def sum_likes_comments_via_api(video_ids, developer_key=DEVELOPER_KEY):
 
 def get_newest_and_oldest_video_date_in_playlist(playlist_id: str, youtube) -> tuple:
     """
-    Ищем самое новое (max) и самое старое (min) videoPublishedAt в плейлисте uploads.
-    Возвращаем (newest, oldest) в ISO-формате.
+    Finds the newest (max) and oldest (min) videoPublishedAt in the uploads playlist.
+    Returns (newest, oldest) in ISO format.
     """
     if not playlist_id:
         return ("", "")
@@ -253,12 +253,12 @@ def get_newest_and_oldest_video_date_in_playlist(playlist_id: str, youtube) -> t
                 pageToken=next_page_token
             ).execute()
         except HttpError as e:
-            # Проверяем, не исчерпана ли квота
+            # Check if the quota has been exceeded
             if e.resp.status in [403, 429] or 'quotaExceeded' in str(e.content):
-                print("[LOG] -> Достигнут лимит квоты YouTube Data API (quotaExceeded). Прерываем обработку.")
+                print("[LOG] -> YouTube Data API quotaExceeded. Stopping processing.")
                 raise
             else:
-                print(f"[LOG] -> HttpError при получении плейлиста: {e}")
+                print(f"[LOG] -> HttpError while getting playlist: {e}")
                 break
 
         items = resp.get("items", [])
@@ -283,7 +283,7 @@ def get_newest_and_oldest_video_date_in_playlist(playlist_id: str, youtube) -> t
 
 def chunked(iterable, n):
     """
-    Разбивает iterable на списки по n элементов.
+    Splits the iterable into lists of n elements.
     """
     for i in range(0, len(iterable), n):
         yield iterable[i:i+n]
@@ -291,13 +291,13 @@ def chunked(iterable, n):
 
 def parse_duration_to_seconds(duration_iso8601: str) -> int:
     """
-    Преобразует ISO 8601 продолжительность (например 'PT4M13S', 'PT59S', 'PT1H2M30S') в кол-во секунд (int).
+    Converts an ISO 8601 duration (e.g. 'PT4M13S', 'PT59S', 'PT1H2M30S') to an integer number of seconds.
     """
     pattern = re.compile(
-        r'PT'                  # постоянный префикс
-        r'(?:(\d+)H)?'         # часы (\d+H) – необязательно
-        r'(?:(\d+)M)?'         # минуты (\d+M) – необязательно
-        r'(?:(\d+)S)?'         # секунды (\d+S) – необязательно
+        r'PT'                  # constant prefix
+        r'(?:(\d+)H)?'         # hours (\d+H) – optional
+        r'(?:(\d+)M)?'         # minutes (\d+M) – optional
+        r'(?:(\d+)S)?'         # seconds (\d+S) – optional
     )
     match = pattern.match(duration_iso8601)
     if not match:
@@ -311,14 +311,14 @@ def parse_duration_to_seconds(duration_iso8601: str) -> int:
 
 def process_channel(driver, raw_channel_handle):
     """
-    Основная логика: 
-      1) channelId через Selenium
-      2) через API (part="snippet,brandingSettings,topicDetails,contentDetails,statistics") 
-         получаем creation_date_api, country, topics, 
+    Main logic:
+      1) Get channelId via Selenium
+      2) Via API (part="snippet,brandingSettings,topicDetails,contentDetails,statistics")
+         get creation_date_api, country, topics,
          first/last video published, total_views,
-         а также плейлист uploads для подсчёта total_videos, num_videos (не shorts), num_shorts
-      3) Через Selenium собираем email, кол-во подписчиков, город/страна (About), и т.д.
-      4) Суммируем лайки/комментарии (estimated_likes, estimated_comments) через API.
+         also the uploads playlist to count total_videos, num_videos (non-shorts), num_shorts
+      3) Via Selenium collect email, subscriber count, city/country (About), etc.
+      4) Sum up likes/comments (estimated_likes, estimated_comments) via API.
     """
     data = {
         "channel_id": "",
@@ -328,8 +328,8 @@ def process_channel(driver, raw_channel_handle):
         "email": "",
         "num_subscribers": None,
 
-        "total_videos": 0,  # всего видео (включая shorts)
-        "num_videos": 0,    # обычные (не shorts)
+        "total_videos": 0,  # all videos (including shorts)
+        "num_videos": 0,    # normal (non-shorts)
         "num_shorts": 0,    # shorts
         "total_views": None,
 
@@ -339,7 +339,7 @@ def process_channel(driver, raw_channel_handle):
         "first_video_published_api": "",
         "last_video_published_api": "",
 
-        # Эти поля заполняем, но не используем в финальном выводе:
+        # These fields are collected but not used in the final output:
         "creation_date": "",
         "first_video_date": "",
         "last_video_date": "",
@@ -349,31 +349,31 @@ def process_channel(driver, raw_channel_handle):
         "estimated_comments": 0
     }
 
-    print(f"[LOG] => Начинаем обработку канала: {raw_channel_handle}")
+    print(f"[LOG] => Starting channel processing: {raw_channel_handle}")
 
-    # 1) Получаем channelId через Selenium
+    # 1) Get channelId via Selenium
     channel_id = get_channel_id_from_handle_selenium(raw_channel_handle)
     data["channel_id"] = channel_id
 
-    # Создаём клиент YouTube Data API
+    # Create YouTube Data API client
     youtube = build("youtube", "v3", developerKey=DEVELOPER_KEY)
 
     if channel_id:
         try:
-            # Запрашиваем данные о канале, включая statistics
+            # Request channel data, including statistics
             try:
                 channel_response = youtube.channels().list(
                     part="snippet,brandingSettings,topicDetails,contentDetails,statistics",
                     id=channel_id
                 ).execute()
             except HttpError as e:
-                # Проверяем, не исчерпана ли квота
+                # Check if the quota has been exceeded
                 if e.resp.status in [403, 429] or 'quotaExceeded' in str(e.content):
-                    print("[LOG] -> Достигнут лимит квоты YouTube Data API (quotaExceeded). Прерываем обработку.")
+                    print("[LOG] -> YouTube Data API quotaExceeded. Stopping processing.")
                     raise
                 else:
-                    print(f"[LOG] -> HttpError при запросе channel API: {e}")
-                    return data  # Возвращаем то, что есть
+                    print(f"[LOG] -> HttpError while requesting channel API: {e}")
+                    return data  # Return whatever we have
 
             ch_items = channel_response.get("items", [])
             if ch_items:
@@ -402,19 +402,19 @@ def process_channel(driver, raw_channel_handle):
                 view_count = stats.get("viewCount")
                 data["total_views"] = int(view_count) if view_count else None
 
-                # contentDetails (получаем uploads-плейлист)
+                # contentDetails (we get the uploads playlist)
                 content_details = channel_data.get("contentDetails", {})
                 rplaylists = content_details.get("relatedPlaylists", {})
                 uploads_playlist_id = rplaylists.get("uploads", "")
 
-                # Определяем даты самого нового/старого видео
+                # Determine the newest/oldest video dates
                 newest_date, oldest_date = get_newest_and_oldest_video_date_in_playlist(
                     uploads_playlist_id, youtube
                 )
                 data["last_video_published_api"]  = iso_to_readable(newest_date)
                 data["first_video_published_api"] = iso_to_readable(oldest_date)
 
-                # Собираем все videoId из плейлиста uploads
+                # Collect all videoIds from the uploads playlist
                 all_video_ids = []
                 next_page_token = None
                 while True:
@@ -426,12 +426,11 @@ def process_channel(driver, raw_channel_handle):
                             pageToken=next_page_token
                         ).execute()
                     except HttpError as e:
-                        # Проверяем, не исчерпана ли квота
                         if e.resp.status in [403, 429] or 'quotaExceeded' in str(e.content):
-                            print("[LOG] -> Достигнут лимит квоты YouTube Data API (quotaExceeded). Прерываем обработку.")
+                            print("[LOG] -> YouTube Data API quotaExceeded. Stopping processing.")
                             raise
                         else:
-                            print(f"[LOG] -> HttpError при получении playlistItems: {e}")
+                            print(f"[LOG] -> HttpError while getting playlistItems: {e}")
                             break
 
                     items_page = playlist_resp.get("items", [])
@@ -446,7 +445,7 @@ def process_channel(driver, raw_channel_handle):
                     if not next_page_token:
                         break
 
-                # Подсчитываем, сколько из них шорт (≤ 60 сек)
+                # Count how many of them are shorts (≤ 60 seconds)
                 short_count = 0
                 for batch in chunked(all_video_ids, 50):
                     batch_str = ",".join(batch)
@@ -456,89 +455,87 @@ def process_channel(driver, raw_channel_handle):
                             id=batch_str
                         ).execute()
                     except HttpError as e:
-                        # Проверяем, не исчерпана ли квота
                         if e.resp.status in [403, 429] or 'quotaExceeded' in str(e.content):
-                            print("[LOG] -> Достигнут лимит квоты YouTube Data API (quotaExceeded). Прерываем обработку.")
+                            print("[LOG] -> YouTube Data API quotaExceeded. Stopping processing.")
                             raise
                         else:
-                            print(f"[LOG] -> HttpError при получении videos: {e}")
+                            print(f"[LOG] -> HttpError while getting videos: {e}")
                             continue
 
                     for item in videos_resp.get("items", []):
                         cdetails = item.get("contentDetails", {})
                         dur_str = cdetails.get("duration", "")
                         if not dur_str:
-                            # Если нет ключа "duration" или значение пустое,
-                            # пропускаем это видео или можно считать 0 секунд.
+                            # If there is no "duration" key or it's empty,
+                            # skip or consider it 0 seconds.
                             continue
 
                         seconds = parse_duration_to_seconds(dur_str)
                         if seconds <= 60:
                             short_count += 1
 
-
-                # total_videos = всё
+                # total_videos = everything
                 data["total_videos"] = len(all_video_ids)
-                # num_shorts = количество коротких
+                # num_shorts = number of short videos
                 data["num_shorts"] = short_count
-                # num_videos = общее количество минус количество шорт
+                # num_videos = total minus shorts
                 data["num_videos"] = data["total_videos"] - data["num_shorts"]
 
-                # Суммарные лайки/комментарии для всех видео (включая шорты)
+                # Summarize likes/comments for all videos (including shorts)
                 if all_video_ids:
                     try:
                         tlikes, tcomms = sum_likes_comments_via_api(all_video_ids, DEVELOPER_KEY)
                         data["estimated_likes"] = tlikes
                         data["estimated_comments"] = tcomms
                     except HttpError:
-                        # Если поймали quotaExceeded в sum_likes_comments_via_api, завершится в вызывающем коде
+                        # If we caught quotaExceeded inside sum_likes_comments_via_api, will exit in the caller
                         pass
 
         except HttpError:
-            # Если где-то внутри произошла quotaExceeded, завершаем
-            print("[LOG] -> Прекращаем обработку (quotaExceeded).")
+            # If quotaExceeded occurred somewhere inside, we stop
+            print("[LOG] -> Stopping (quotaExceeded).")
             raise
 
-    # 3) Сбор Selenium (подписчики, email, город/страна из About, и пр.)
+    # 3) Collect data with Selenium (subscribers, email, city/country from About, etc.)
     try:
         channel_url = normalize_channel_url(raw_channel_handle)
-        print(f"[LOG] => Построенный URL канала: {channel_url}")
+        print(f"[LOG] => Constructed channel URL: {channel_url}")
         driver.get(channel_url)
         time.sleep(3)
 
-        # Закрываем куки-баннер (если появится)
+        # Close cookies banner if it appears
         try:
             cookie_btn = WebDriverWait(driver, 5).until(
                 EC.element_to_be_clickable((By.CSS_SELECTOR, "button[aria-label^='Accept the use of cookies']"))
             )
             cookie_btn.click()
-            print("[LOG] => Куки-баннер обнаружен и закрыт.")
+            print("[LOG] => Cookies banner found and closed.")
             time.sleep(2)
         except:
-            print("[LOG] => Куки-баннер не найден/не кликабелен.")
+            print("[LOG] => Cookies banner not found/not clickable.")
 
-        # Название канала
+        # Channel name
         try:
             h1_elem = driver.find_element(By.CSS_SELECTOR, "h1.dynamic-text-view-model-wiz__h1 span")
             channel_name = h1_elem.text.strip()
-            print(f"[LOG] => Название канала (Selenium): {channel_name}")
+            print(f"[LOG] => Channel name (Selenium): {channel_name}")
             data["channel_name"] = channel_name
             data["first_last_name"] = guess_name_surname(channel_name)
         except:
-            print("[LOG] => Не удалось найти h1.dynamic-text-view-model-wiz__h1 span")
+            print("[LOG] => Could not find h1.dynamic-text-view-model-wiz__h1 span")
 
-        # Подписчики
+        # Subscribers
         try:
             subs_elem = driver.find_element(By.XPATH, "//span[contains(text(),'subscriber')]")
             subs_text = subs_elem.text.strip()
             data["num_subscribers"] = parse_subscribers_to_int(subs_text)
-            print(f"[LOG] => Подписчики (Selenium): {subs_text} -> {data['num_subscribers']}")
+            print(f"[LOG] => Subscribers (Selenium): {subs_text} -> {data['num_subscribers']}")
         except:
-            print("[LOG] => Не удалось найти количество подписчиков (Selenium).")
+            print("[LOG] => Could not find subscriber count (Selenium).")
 
-        # Вкладка ABOUT
+        # ABOUT tab
         about_url = channel_url.split("?")[0].rstrip("/") + "/about?hl=en&gl=US"
-        print("[LOG] => Переходим на вкладку ABOUT:", about_url)
+        print("[LOG] => Going to ABOUT tab:", about_url)
         driver.get(about_url)
         time.sleep(2)
 
@@ -551,17 +548,17 @@ def process_channel(driver, raw_channel_handle):
             emails = extract_emails_from_text(big_text)
             if emails:
                 data["email"] = emails[0]
-                print("[LOG] => Найден email:", data["email"])
+                print("[LOG] => Found email:", data["email"])
         except:
-            print("[LOG] => Не удалось извлечь email.")
+            print("[LOG] => Could not extract email.")
 
-        # Местоположение (город/страна)
+        # City/country
         city_country = get_city_country_from_about(driver)
         if city_country:
             data["city_country"] = city_country
-            print("[LOG] => Местоположение (Selenium):", city_country)
+            print("[LOG] => City/country (Selenium):", city_country)
 
-        # Дата создания (Selenium) — (храним, но не выводим)
+        # Creation date (Selenium) — (stored but not displayed)
         try:
             dt_joined = driver.find_element(By.XPATH, "//yt-formatted-string[contains(text(),'Joined')]").text.strip()
             dt_joined = dt_joined.replace("Joined", "").strip()
@@ -569,7 +566,7 @@ def process_channel(driver, raw_channel_handle):
         except:
             pass
 
-        # Вкладка CHANNELS (подсчёт, на сколько каналов автор подписан)
+        # CHANNELS tab (how many channels this author is following)
         channels_url = channel_url.split("?")[0].rstrip("/") + "/channels?hl=en&gl=US"
         driver.get(channels_url)
         time.sleep(2)
@@ -580,9 +577,9 @@ def process_channel(driver, raw_channel_handle):
             data["num_following_channels"] = 0
 
     except Exception as e:
-        print(f"!!! Ошибка при обработке канала {raw_channel_handle}: {e}")
+        print(f"!!! Error processing channel {raw_channel_handle}: {e}")
 
-    print("[LOG] => Завершили обработку канала:", raw_channel_handle)
+    print("[LOG] => Finished processing channel:", raw_channel_handle)
     print("-"*60)
     return data
 
@@ -591,57 +588,54 @@ def main():
     driver = get_webdriver()
 
     if not os.path.exists(XLSX_INPUT):
-        print(f"Не найден входной файл {XLSX_INPUT}")
+        print(f"Input file not found: {XLSX_INPUT}")
         return
 
-    # Загружаем входную книгу
+    # Load the input workbook
     wb_in = load_workbook(XLSX_INPUT)
     ws_in = wb_in.active
 
-    # Ищем столбец "channel_handle" во входном файле
+    # Find the "channel_handle" column in the input file
     header_in = [cell.value for cell in next(ws_in.iter_rows(min_row=1, max_row=1))]
     try:
         channel_index = header_in.index("channel_handle")
     except ValueError:
-        print("В файле не найден столбец 'channel_handle'. Завершение.")
+        print("No 'channel_handle' column found in the file. Exiting.")
         return
 
-    # Подготовка выходной книги
-    already_processed = set()  # множество обработанных каналов
+    # Prepare the output workbook
+    already_processed = set()  # set of processed channels
     if os.path.exists(XLSX_OUTPUT):
-        # Если файл уже существует - открываем и считываем "channel_handle_in_excel"
+        # If the file already exists, open it and read "channel_handle_in_excel"
         wb_out = load_workbook(XLSX_OUTPUT)
         ws_out = wb_out.active
 
-        # Предполагаем, что заголовки уже есть в первой строке
+        # We assume that headers already exist in the first row
         header_out = [cell.value for cell in next(ws_out.iter_rows(min_row=1, max_row=1))]
         if "channel_handle_in_excel" not in header_out:
-            print(f"[LOG] -> Не найден нужный столбец 'channel_handle_in_excel' в {XLSX_OUTPUT}. Завершение.")
+            print(f"[LOG] -> The required column 'channel_handle_in_excel' not found in {XLSX_OUTPUT}. Exiting.")
             driver.quit()
             return
 
-        # Находим индекс колонки channel_handle_in_excel
+        # Find the index of column channel_handle_in_excel
         try:
             handle_col_index = header_out.index("channel_handle_in_excel") + 1
         except ValueError:
-            print(f"[LOG] -> Столбец 'channel_handle_in_excel' отсутствует в выходном файле. Завершение.")
+            print(f"[LOG] -> Column 'channel_handle_in_excel' is missing in the output file. Exiting.")
             driver.quit()
             return
 
-        # Считываем все значения из этой колонки, кроме заголовка
+        # Read all values from that column, except the header
         for row in ws_out.iter_rows(min_row=2, values_only=True):
             if row and row[0]:
-                # row[0] соответствует channel_handle_in_excel, так как это первая колонка в выходном
-                # но мы должны убедиться, что handle_col_index=1 => row[0]
-                # если заголовки расположены иначе, использовать соответствующий индекс
                 already_processed.add(str(row[0]))
     else:
-        # Если файла нет, создаём новый
+        # If the file does not exist, create a new one
         wb_out = Workbook()
         ws_out = wb_out.active
         ws_out.title = "Channels"
 
-        # Формируем заголовки для выходного файла
+        # Create headers for the output file
         headers = [
             "channel_handle_in_excel",
             "channel_id",
@@ -664,7 +658,7 @@ def main():
             "estimated_comments"
         ]
         ws_out.append(headers)
-        # Не забываем сохранить сразу, чтобы файл появился на диске
+        # Save immediately so that the file appears on disk
         wb_out.save(XLSX_OUTPUT)
 
     count_processed = 0
@@ -672,29 +666,29 @@ def main():
     try:
         for i, row in enumerate(ws_in.iter_rows(min_row=2, values_only=True), start=1):
             if MAX_CHANNELS is not None and count_processed >= MAX_CHANNELS:
-                print(f"[LOG] => Достигнут лимит: обработано {MAX_CHANNELS} каналов. Прерываем цикл.")
+                print(f"[LOG] => Limit reached: {MAX_CHANNELS} channels processed. Breaking out of the loop.")
                 break
 
             raw_channel_handle = row[channel_index]
             if not raw_channel_handle:
                 continue
 
-            # Если уже обрабатывали этот канал, пропускаем
+            # If already processed this channel, skip
             if raw_channel_handle in already_processed:
-                print(f"[LOG] => Канал {raw_channel_handle} уже есть в {XLSX_OUTPUT}, пропускаем.")
+                print(f"[LOG] => Channel {raw_channel_handle} is already in {XLSX_OUTPUT}, skipping.")
                 continue
 
-            print(f"\n=== [{i}] Обрабатываем канал из Excel: {raw_channel_handle} ===")
+            print(f"\n=== [{i}] Processing channel from Excel: {raw_channel_handle} ===")
             try:
                 data = process_channel(driver, raw_channel_handle)
             except HttpError:
-                # Если попали сюда, значит quotaExceeded (или иная критическая ошибка)
-                print("[LOG] => Остановка цикла из-за исчерпания квоты или критической ошибки API.")
+                # If we got here, it means quotaExceeded (or another critical error)
+                print("[LOG] => Stopping the loop due to quotaExceeded or critical API error.")
                 break
 
-            # Формируем строку для итоговой таблицы
+            # Build a row for the final table
             row_out = [
-                raw_channel_handle,                # handle из Excel
+                raw_channel_handle,                # handle from Excel
                 data["channel_id"],
                 data["channel_name"],
                 data["first_last_name"],
@@ -715,21 +709,21 @@ def main():
                 data["estimated_comments"]
             ]
 
-            # Добавляем эту строку в выходной Excel
+            # Append this row to the output Excel
             ws_out.append(row_out)
-            wb_out.save(XLSX_OUTPUT)  # Сохраняем после каждой записи, чтобы не потерять
+            wb_out.save(XLSX_OUTPUT)  # Save after each record to avoid losing data
 
-            # Добавляем в множество "уже обработанных", чтобы не дублировать
+            # Add to the set of processed channels
             already_processed.add(raw_channel_handle)
 
             count_processed += 1
 
     finally:
-        # Закрываем драйвер в любом случае
+        # Close the driver in any case
         driver.quit()
 
-    print("[i] Запись данных завершена.")
-    print("Готово!")
+    print("[i] Data recording is complete.")
+    print("Done!")
 
 
 if __name__ == "__main__":

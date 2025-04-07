@@ -11,7 +11,7 @@ import traceback
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-# Для Selenium
+# For Selenium
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
@@ -19,16 +19,16 @@ from webdriver_manager.chrome import ChromeDriverManager
 from requests.exceptions import ConnectionError as RequestsConnectionError
 import urllib3.exceptions
 
-# --------------------------------------------------------------------------
-# ФУНКЦИЯ: Повторные попытки для YouTube API (search.list и channels.list)
-# --------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# FUNCTION: Retries for YouTube API (search.list and channels.list)
+# ------------------------------------------------------------------------------
 def youtube_api_call_with_retries(api_func, max_retries=3, sleep_seconds=5):
     """
-    Вызывает api_func() (который должен вернуть объект, у которого вызов .execute()),
-    делает несколько повторных попыток при HttpError/соединении,
-    чтобы обойти временные сбои (ConnectionAbortedError, RemoteDisconnected и т.д.).
+    Calls api_func() (which should return an object on which .execute() is called),
+    and performs multiple retries in case of HttpError/connection issues
+    in order to bypass transient failures (ConnectionAbortedError, RemoteDisconnected, etc.).
 
-    Возвращает response или None, если после max_retries не удалось.
+    Returns the response or None if all max_retries fail.
     """
     for attempt in range(1, max_retries + 1):
         try:
@@ -37,36 +37,36 @@ def youtube_api_call_with_retries(api_func, max_retries=3, sleep_seconds=5):
         except (HttpError, ConnectionAbortedError, OSError,
                 urllib3.exceptions.ProtocolError,
                 RequestsConnectionError) as e:
-            logging.error(f"[youtube_api_call_with_retries] Попытка {attempt}/{max_retries} -> ошибка: {e}")
+            logging.error(f"[youtube_api_call_with_retries] Attempt {attempt}/{max_retries} -> error: {e}")
             if attempt < max_retries:
-                logging.info(f"Подождём {sleep_seconds} сек и повторим...")
+                logging.info(f"Waiting {sleep_seconds} seconds and then will retry...")
                 time.sleep(sleep_seconds)
             else:
-                logging.error("Лимит повторных попыток исчерпан. Возвращаем None.")
+                logging.error("Retry limit exceeded. Returning None.")
                 return None
         except Exception as e2:
-            logging.error(f"[youtube_api_call_with_retries] Непредвиденная ошибка: {e2}")
+            logging.error(f"[youtube_api_call_with_retries] Unexpected error: {e2}")
             traceback.print_exc()
             return None
     return None
 
 
-# --------------------------------------------------------------------------
-# ФУНКЦИЯ: Получить handle канала через Selenium (с повторными попытками)
-# --------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# FUNCTION: Get channel handle via Selenium (with retries)
+# ------------------------------------------------------------------------------
 def get_handle_from_channel_id_selenium(channel_id: str,
                                         max_retries=3,
                                         sleep_seconds=5) -> str:
     """
-    Открывает https://www.youtube.com/channel/<channel_id> в Selenium,
-    ищет селектор:
+    Opens https://www.youtube.com/channel/<channel_id> in Selenium,
+    looks for selector:
        div.yt-content-metadata-view-model-wiz__metadata-row
            .yt-content-metadata-view-model-wiz__metadata-row--metadata-row-inline
            span.yt-core-attributed-string--link-inherit-color
 
-    Возвращает что-то вроде '@Evel-901' или None, если не нашлось.
-    Пробуем до max_retries раз, если webdriver_manager или сам браузер
-    выдают ошибку сети.
+    Returns something like '@Evel-901' or None if not found.
+    Tries up to max_retries times if webdriver_manager or the browser
+    throw a network error.
     """
 
     for attempt in range(1, max_retries + 1):
@@ -76,56 +76,55 @@ def get_handle_from_channel_id_selenium(channel_id: str,
                 urllib3.exceptions.ProtocolError,
                 ConnectionAbortedError,
                 Exception) as e:
-            # Логируем ошибку, ждём и пробуем ещё
-            logging.error(f"[get_handle_from_channel_id_selenium] Попытка {attempt}/{max_retries} -> Ошибка: {e}")
+            logging.error(f"[get_handle_from_channel_id_selenium] Attempt {attempt}/{max_retries} -> Error: {e}")
             traceback.print_exc()
             if attempt < max_retries:
-                logging.info(f"Подождём {sleep_seconds} сек и повторим открытие Selenium...")
+                logging.info(f"Waiting {sleep_seconds} seconds and then will retry Selenium...")
                 time.sleep(sleep_seconds)
             else:
-                logging.error("Лимит повторных попыток открыть Selenium исчерпан.")
+                logging.error("Selenium retry limit exceeded.")
                 return None
     return None
 
 
 def _try_open_channel_and_get_handle(channel_id: str) -> str:
     """
-    Реальная логика открытия браузера + поиска handle.
-    Вызывается из get_handle_from_channel_id_selenium в цикле повторных попыток.
+    Actual logic for opening the browser + finding the handle.
+    Called by get_handle_from_channel_id_selenium in a retry loop.
     """
-    logging.info(f"[_try_open_channel_and_get_handle] Старт для channel_id={channel_id}")
+    logging.info(f"[_try_open_channel_and_get_handle] Starting for channel_id={channel_id}")
 
-    # --- Настройки ChromeOptions ---
+    # --- ChromeOptions settings ---
     options = webdriver.ChromeOptions()
-    # При желании включите безголовый режим:
+    # Enable headless mode if desired:
     # options.add_argument("--headless")
 
-    # Увеличим задержки:
+    # Increase timeouts:
     options.add_argument("--start-maximized")
     options.page_load_strategy = "normal"
 
-    # Если вы уже скачали ChromeDriver вручную, можно указать путь:
+    # If you already downloaded ChromeDriver manually, you can specify the path:
     # driver_path = r"C:\path\to\chromedriver.exe"
     # service = ChromeService(executable_path=driver_path)
     # driver = webdriver.Chrome(service=service, options=options)
 
-    # Иначе пытаемся скачать через webdriver_manager:
+    # Otherwise, try to download via webdriver_manager:
     service = ChromeService(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=options)
 
-    # Настраиваем большие таймауты
-    driver.set_page_load_timeout(120)   # до 120 секунд ждем полной загрузки страницы
-    driver.implicitly_wait(30)         # до 30 секунд ждем появления элементов
-    logging.info("[Selenium] WebDriver запущен, открываем страницу...")
+    # Set large timeouts
+    driver.set_page_load_timeout(120)  # up to 120 seconds waiting for page load
+    driver.implicitly_wait(30)         # up to 30 seconds waiting for elements
+    logging.info("[Selenium] WebDriver started, opening page...")
 
     try:
         url = f"https://www.youtube.com/channel/{channel_id}"
         driver.get(url)
 
-        # Дополнительная пауза, чтобы точно все подгрузилось (баннер, JS и т.д.)
+        # Additional pause to ensure everything is loaded (banner, JS, etc.)
         time.sleep(15)
 
-        logging.info("[Selenium] Ищем нужный <span>...")
+        logging.info("[Selenium] Looking for the required <span>...")
 
         span_handle = driver.find_element(
             By.CSS_SELECTOR,
@@ -136,27 +135,28 @@ def _try_open_channel_and_get_handle(channel_id: str) -> str:
 
         found_handle = span_handle.text.strip()
         if found_handle:
-            logging.info(f"[Selenium] Найден handle: {found_handle}")
+            logging.info(f"[Selenium] Found handle: {found_handle}")
             return found_handle
         else:
-            logging.warning("[Selenium] Элемент span найден, но текст пуст.")
+            logging.warning("[Selenium] Span element found but text is empty.")
             return None
 
     finally:
-        logging.info("[Selenium] Закрываем браузер.")
+        logging.info("[Selenium] Closing the browser.")
         driver.quit()
 
 
-# --------------------------------------------------------------------------
-# ГЛАВНАЯ ФУНКЦИЯ
-# --------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+# MAIN FUNCTION
+# ------------------------------------------------------------------------------
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
-    DEVELOPER_KEY = "AIzaSyDWpLkA5QbQjqz-pfaV03FslYXPGLOn9zg"  # <-- ВСТАВЬТЕ СВОЙ API-KEY!
+    # Insert your own API key here
+    DEVELOPER_KEY = "YOUR_API_KEY_HERE"
     youtube = build("youtube", "v3", developerKey=DEVELOPER_KEY)
 
-    # Настройки поиска: за последний год, регион FR
+    # Search settings: last year, region FR
     days_back = 365
     published_after = datetime.datetime.utcnow() - datetime.timedelta(days=days_back)
     published_after_str = published_after.isoformat("T") + "Z"
@@ -176,12 +176,12 @@ def main():
         "faut"
     ]
 
-    logging.info("=== Настройки ===")
-    logging.info(f"Ищем видео, опубликованные после {published_after_str}, regionCode='FR', order='date', maxResults=50.")
-    logging.info(f"Французские ключевые слова: {FRENCH_QUERIES}")
+    logging.info("=== Settings ===")
+    logging.info(f"Searching for videos published after {published_after_str}, regionCode='FR', order='date', maxResults=50.")
+    logging.info(f"French keywords: {FRENCH_QUERIES}")
 
     # ----------------------------------------------------------------------
-    # Готовим БД (SQLite): "channels_data.db" с таблицей "processed_videos"
+    # Prepare DB (SQLite): "channels_data.db" with table "processed_videos"
     # ----------------------------------------------------------------------
     db_path = "channels_data.db"
     conn = sqlite3.connect(db_path)
@@ -195,7 +195,7 @@ def main():
     conn.commit()
 
     # ----------------------------------------------------------------------
-    # Готовим Excel (channel_info.xlsx)
+    # Prepare Excel (channel_info.xlsx)
     # ----------------------------------------------------------------------
     excel_path = "channel_info.xlsx"
     if os.path.exists(excel_path):
@@ -203,7 +203,7 @@ def main():
     else:
         df_channels = pd.DataFrame(columns=["channel_handle", "subscribers"])
 
-    # Проверяем столбцы
+    # Check columns
     if "channel_handle" not in df_channels.columns:
         df_channels["channel_handle"] = ""
     if "subscribers" not in df_channels.columns:
@@ -213,18 +213,18 @@ def main():
     total_new_channels = 0
 
     # ----------------------------------------------------------------------
-    # Перебираем ключевые слова, листаем выдачу search() по pageToken
+    # Loop over keywords, navigate search() results by pageToken
     # ----------------------------------------------------------------------
     for query_str in FRENCH_QUERIES:
-        logging.info(f"=== Начинаем поиск по запросу '{query_str}' ===")
+        logging.info(f"=== Starting search for query '{query_str}' ===")
         page_token = None
         page_index = 0
 
         while True:
             page_index += 1
-            logging.info(f"[{query_str}] Страница #{page_index}, pageToken={page_token!r}")
+            logging.info(f"[{query_str}] Page #{page_index}, pageToken={page_token!r}")
 
-            # Вызываем search() с ретраями
+            # Call search() with retries
             def search_api_call():
                 return youtube.search().list(
                     part="snippet",
@@ -239,18 +239,18 @@ def main():
 
             search_response = youtube_api_call_with_retries(search_api_call, max_retries=3, sleep_seconds=5)
             if not search_response:
-                logging.warning(f"[{query_str}] Ошибка при search().list, пропускаем остаток.")
+                logging.warning(f"[{query_str}] Error calling search().list, skipping the rest.")
                 break
 
             items = search_response.get("items", [])
-            logging.info(f"[{query_str}] На странице #{page_index} получено {len(items)} видео.")
+            logging.info(f"[{query_str}] Page #{page_index} returned {len(items)} videos.")
             if not items:
-                logging.info(f"[{query_str}] Пустая выдача -> завершаем.")
+                logging.info(f"[{query_str}] Empty result -> finishing.")
                 break
 
             total_videos_fetched += len(items)
 
-            # Обработка видео
+            # Process videos
             for idx, item in enumerate(items, start=1):
                 snippet = item.get("snippet", {})
                 video_id = item["id"].get("videoId")
@@ -258,28 +258,28 @@ def main():
 
                 logging.info(f"[{query_str} Pg#{page_index} Vid#{idx}] video_id={video_id}, channel_id={channel_id}")
 
-                # 1) Проверяем, не обрабатывали ли уже это видео
+                # 1) Check if we already processed this video
                 cur.execute("SELECT 1 FROM processed_videos WHERE video_id=?", (video_id,))
                 row = cur.fetchone()
                 if row:
-                    logging.info(f"    -> Видео {video_id} уже в БД, пропускаем.")
+                    logging.info(f"    -> Video {video_id} is already in DB, skipping.")
                     continue
 
                 title = snippet.get("title", "")
                 description = snippet.get("description", "")
 
-                # Определяем язык
+                # Detect language
                 text_for_lang = f"{title}\n{description}"
                 lang_detected, conf = langid.classify(text_for_lang)
                 logging.info(f"    lang={lang_detected}, conf={conf:.4f}")
                 if lang_detected != "fr":
-                    logging.info("    -> Язык != 'fr', пропускаем.")
-                    # Отмечаем видео как обработанное
+                    logging.info("    -> Language != 'fr', skipping.")
+                    # Mark video as processed
                     cur.execute("INSERT INTO processed_videos (video_id) VALUES (?)", (video_id,))
                     conn.commit()
                     continue
 
-                # 2) Запрашиваем статистику канала (channels().list)
+                # 2) Request channel statistics (channels().list)
                 def channels_api_call():
                     return youtube.channels().list(
                         part="statistics",
@@ -288,14 +288,14 @@ def main():
 
                 ch_resp = youtube_api_call_with_retries(channels_api_call, max_retries=3, sleep_seconds=5)
                 if not ch_resp:
-                    logging.warning(f"    -> channels().list вернул None, пропускаем канал {channel_id}.")
+                    logging.warning(f"    -> channels().list returned None, skipping channel {channel_id}.")
                     cur.execute("INSERT INTO processed_videos (video_id) VALUES (?)", (video_id,))
                     conn.commit()
                     continue
 
                 ch_items = ch_resp.get("items", [])
                 if not ch_items:
-                    logging.info(f"    -> Канал {channel_id} не найден в ответе.")
+                    logging.info(f"    -> Channel {channel_id} not found in response.")
                     cur.execute("INSERT INTO processed_videos (video_id) VALUES (?)", (video_id,))
                     conn.commit()
                     continue
@@ -307,54 +307,54 @@ def main():
                 except:
                     subs_count = 0
 
-                logging.info(f"    -> Подписчиков: {subs_count}")
+                logging.info(f"    -> Subscribers: {subs_count}")
                 if subs_count >= 50000:
-                    logging.info("    -> Слишком много подписчиков (>=50k), пропускаем.")
+                    logging.info("    -> Too many subscribers (>=50k), skipping.")
                     cur.execute("INSERT INTO processed_videos (video_id) VALUES (?)", (video_id,))
                     conn.commit()
                     continue
 
-                # 3) Канал подходит, получаем handle через Selenium
-                logging.info("    -> Вызываем Selenium для handle...")
+                # 3) The channel is suitable, get the handle via Selenium
+                logging.info("    -> Calling Selenium for handle...")
                 handle = get_handle_from_channel_id_selenium(channel_id, max_retries=3, sleep_seconds=5)
                 if not handle:
-                    logging.info("    -> Не удалось получить handle, пропускаем канал.")
+                    logging.info("    -> Could not get handle, skipping channel.")
                     cur.execute("INSERT INTO processed_videos (video_id) VALUES (?)", (video_id,))
                     conn.commit()
                     continue
 
-                # 4) Проверяем дубли в df_channels
+                # 4) Check duplicates in df_channels
                 if handle in df_channels["channel_handle"].values:
-                    logging.info(f"    -> Handle {handle} уже есть в Excel, пропускаем.")
+                    logging.info(f"    -> Handle {handle} is already in Excel, skipping.")
                 else:
-                    # Добавляем строку
-                    logging.info(f"    -> Новый канал: handle={handle}, subs={subs_count}. Записываем в Excel.")
+                    # Add a new row
+                    logging.info(f"    -> New channel: handle={handle}, subs={subs_count}. Saving to Excel.")
                     df_channels.loc[len(df_channels)] = [handle, subs_count]
                     try:
                         df_channels.to_excel(excel_path, index=False)
                     except PermissionError as pe:
-                        logging.error(f"Не удалось сохранить Excel {excel_path}: {pe}")
-                        # В этом случае потеряем эти данные, если скрипт упадёт дальше
+                        logging.error(f"Could not save Excel {excel_path}: {pe}")
+                        # If there's a permission issue, data will be lost if the script fails later
 
                     total_new_channels += 1
 
-                # 5) Отмечаем это видео как обработанное
+                # 5) Mark this video as processed
                 cur.execute("INSERT INTO processed_videos (video_id) VALUES (?)", (video_id,))
                 conn.commit()
 
-            # Следующая страница
+            # Next page
             page_token = search_response.get("nextPageToken")
             if not page_token:
-                logging.info(f"[{query_str}] Страниц больше нет.")
+                logging.info(f"[{query_str}] No more pages.")
                 break
 
-    # Финал
-    logging.info("===== ИТОГ =====")
-    logging.info(f"Всего просмотрели {total_videos_fetched} видео (по всем ключевым словам).")
-    logging.info(f"Добавлено новых каналов: {total_new_channels}.")
+    # Final
+    logging.info("===== RESULT =====")
+    logging.info(f"Total videos scanned: {total_videos_fetched} (across all keywords).")
+    logging.info(f"New channels added: {total_new_channels}.")
 
     conn.close()
-    logging.info("Скрипт завершён.")
+    logging.info("Script finished.")
 
 
 if __name__ == "__main__":
